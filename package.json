@@ -1,0 +1,9 @@
+{
+  "name": "stremio-cdn-live-tv",
+  "version": "1.0.0",
+  "description": "Addon do Stremio para CDN Live TV na Vercel",
+  "main": "api/index.js",
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.0"
+  }
+}
