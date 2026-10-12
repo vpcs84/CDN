@@ -20,7 +20,7 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Cache em memória (dura enquanto a instância serverless estiver quente)
+// Cache em memória
 let channelsCache = {
     data: [],
     lastFetched: 0
@@ -85,13 +85,55 @@ builder.defineStreamHandler(async ({ id }) => {
     return { streams: [] };
 });
 
-// Exporta o router compatível com funções serverless da Vercel
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 module.exports = (req, res) => {
+    // Se acessar a raiz (/), mostra uma página de boas-vindas bonita com link de instalação
+    if (req.url === '/' || req.url === '') {
+        const host = req.headers['x-forwarded-host'] || req.headers.host;
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
+        const manifestUrl = `${protocol}://${host}/manifest.json`;
+        const stremioUrl = `stremio://${host}/manifest.json`;
+
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`
+            <!DOCTYPE html>
+            <html lang="pt-BR">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>CDN Live TV - Stremio Addon</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1015; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                    .card { background: #181b22; padding: 40px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; max-width: 450px; width: 100%; border: 1px solid #2f3542; }
+                    h1 { color: #f2f2f2; margin-bottom: 10px; font-size: 24px; }
+                    p { color: #a4b0be; font-size: 14px; margin-bottom: 25px; line-height: 1.5; }
+                    .btn { display: inline-block; background: #7c4dff; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; transition: background 0.2s; margin-bottom: 15px; width: 100%; box-sizing: border-box; }
+                    .btn:hover { background: #651fff; }
+                    .manifest-link { font-size: 12px; color: #70a1ff; word-break: break-all; text-decoration: none; }
+                    .manifest-link:hover { text-decoration: underline; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>📺 CDN Live TV Addon</h1>
+                    <p>O addon do Stremio está online e pronto para uso na Vercel!</p>
+                    <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
+                    <div style="margin-top: 15px;">
+                        <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
+                        <a href="${manifestUrl}" class="manifest-link" target="_blank">${manifestUrl}</a>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `);
+        return;
+    }
+
+    // Demais rotas do Stremio
     router(req, res, () => {
         res.statusCode = 404;
-        res.end();
+        res.end('Not found');
     });
 };
