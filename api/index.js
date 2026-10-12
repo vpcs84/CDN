@@ -3,7 +3,7 @@ const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 // Configuração do Manifesto do Addon
 const manifest = {
     id: 'org.cdnlivetv.addon',
-    version: '1.0.5',
+    version: '1.0.6',
     name: 'CDN Live TV',
     description: 'Assista a centenas de canais de TV ao vivo diretamente no Stremio.',
     resources: ['catalog', 'meta', 'stream'],
@@ -49,13 +49,14 @@ async function fetchChannels() {
     }
 }
 
-// Função para garantir que a URL da imagem use HTTPS
-function cleanImageUrl(url) {
+// Proxy externo confiável para liberar os logotipos no Stremio
+function getProxyImageUrl(url) {
     if (!url) return '';
-    if (url.startsWith('http://')) {
-        return url.replace('http://', 'https://');
+    let fixedUrl = url;
+    if (fixedUrl.startsWith('http://')) {
+        fixedUrl = fixedUrl.replace('http://', 'https://');
     }
-    return url;
+    return `https://images.weserv.nl/?url=${encodeURIComponent(fixedUrl)}`;
 }
 
 // Handler do Catálogo
@@ -64,7 +65,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
         const channels = await fetchChannels();
         
         const metas = channels.map((channel, index) => {
-            const imgUrl = cleanImageUrl(channel.image);
+            const imgUrl = getProxyImageUrl(channel.image);
 
             return {
                 id: `cdn_${index}`,
@@ -72,7 +73,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
                 name: channel.name,
                 poster: imgUrl,
                 logo: imgUrl,
-                posterShape: 'square', // Ideal para exibir os logotipos de TV corretamente
+                posterShape: 'square', // Formato ideal para logos de TV
                 description: `País: ${channel.code ? channel.code.toUpperCase() : 'N/A'} | Status: ${channel.status ? channel.status.toUpperCase() : 'ONLINE'} | Espectadores: ${channel.viewers || 0}`
             };
         });
@@ -90,7 +91,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
         const channel = channels[index];
 
         if (channel) {
-            const imgUrl = cleanImageUrl(channel.image);
+            const imgUrl = getProxyImageUrl(channel.image);
 
             return {
                 meta: {
@@ -166,7 +167,7 @@ module.exports = (req, res) => {
             <body>
                 <div class="card">
                     <h1>📺 CDN Live TV Addon</h1>
-                    <p>Addon otimizado com logotipos e suporte completo ao Stremio!</p>
+                    <p>Addon atualizado com proxy de imagens otimizado!</p>
                     <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
                     <div style="margin-top: 15px;">
                         <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
