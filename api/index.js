@@ -3,7 +3,7 @@ const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 // Configuração do Manifesto do Addon
 const manifest = {
     id: 'org.cdnlivetv.addon',
-    version: '1.0.0',
+    version: '1.0.1',
     name: 'CDN Live TV',
     description: 'Assista a centenas de canais de TV ao vivo diretamente no Stremio.',
     resources: ['catalog', 'stream'],
@@ -55,6 +55,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
             type: 'tv',
             name: channel.name,
             poster: channel.image,
+            posterShape: 'square', // Essencial para exibir logotipos corretamente
             background: channel.image,
             description: `País: ${channel.code.toUpperCase()} | Status: ${channel.status.toUpperCase()} | Espectadores: ${channel.viewers}`
         }));
@@ -64,7 +65,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
     return { metas: [] };
 });
 
-// Handler de Stream
+// Handler de Stream (Configurado para URLs de player web)
 builder.defineStreamHandler(async ({ id }) => {
     if (id.startsWith('cdn_')) {
         const index = parseInt(id.replace('cdn_', ''), 10);
@@ -76,7 +77,10 @@ builder.defineStreamHandler(async ({ id }) => {
                 streams: [
                     {
                         title: `${channel.name} (${channel.code.toUpperCase()})`,
-                        url: channel.url
+                        externalUrl: channel.url, // Abre a página do player da API
+                        behaviorHints: {
+                            notWebReady: true // Informa ao Stremio que este link deve ser aberto externamente
+                        }
                     }
                 ]
             };
@@ -89,7 +93,7 @@ const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 module.exports = (req, res) => {
-    // Se acessar a raiz (/), mostra uma página de boas-vindas bonita com link de instalação
+    // Página inicial amigável
     if (req.url === '/' || req.url === '') {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const protocol = req.headers['x-forwarded-proto'] || 'https';
@@ -118,7 +122,7 @@ module.exports = (req, res) => {
             <body>
                 <div class="card">
                     <h1>📺 CDN Live TV Addon</h1>
-                    <p>O addon do Stremio está online e pronto para uso na Vercel!</p>
+                    <p>O addon do Stremio está atualizado e pronto para uso!</p>
                     <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
                     <div style="margin-top: 15px;">
                         <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
@@ -131,7 +135,6 @@ module.exports = (req, res) => {
         return;
     }
 
-    // Demais rotas do Stremio
     router(req, res, () => {
         res.statusCode = 404;
         res.end('Not found');
