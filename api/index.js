@@ -1,12 +1,12 @@
 const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 
-// Configuração do Manifesto do Addon
+// Configuração do Manifesto do Addon (Adicionado 'meta' aos recursos)
 const manifest = {
     id: 'org.cdnlivetv.addon',
-    version: '1.0.2',
+    version: '1.0.3',
     name: 'CDN Live TV',
     description: 'Assista a centenas de canais de TV ao vivo diretamente no Stremio.',
-    resources: ['catalog', 'stream'],
+    resources: ['catalog', 'meta', 'stream'],
     types: ['tv'],
     catalogs: [
         {
@@ -49,13 +49,12 @@ async function fetchChannels() {
     }
 }
 
-// Handler do Catálogo (Logotipo retangular/landscape ajustado)
+// Handler do Catálogo
 builder.defineCatalogHandler(async ({ type, id }) => {
     if (type === 'tv' && id === 'cdn_live_channels') {
         const channels = await fetchChannels();
         
         const metas = channels.map((channel, index) => {
-            // Garante o protocolo https nas URLs de imagem
             let imageUrl = channel.image || '';
             if (imageUrl.startsWith('http://')) {
                 imageUrl = imageUrl.replace('http://', 'https://');
@@ -66,7 +65,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
                 type: 'tv',
                 name: channel.name,
                 poster: imageUrl,
-                posterShape: 'landscape', // Ajustado para formato retangular
+                posterShape: 'landscape', // Logotipo retangular
                 background: imageUrl,
                 logo: imageUrl,
                 description: `País: ${channel.code ? channel.code.toUpperCase() : 'N/A'} | Status: ${channel.status ? channel.status.toUpperCase() : 'ONLINE'} | Espectadores: ${channel.viewers || 0}`
@@ -78,7 +77,37 @@ builder.defineCatalogHandler(async ({ type, id }) => {
     return { metas: [] };
 });
 
-// Handler de Stream (Abertura do player via Web/Player Externo)
+// Handler de Metadados (Resolve o erro "Nenhum addon fornece metadados")
+builder.defineMetaHandler(async ({ type, id }) => {
+    if (type === 'tv' && id.startsWith('cdn_')) {
+        const index = parseInt(id.replace('cdn_', ''), 10);
+        const channels = await fetchChannels();
+        const channel = channels[index];
+
+        if (channel) {
+            let imageUrl = channel.image || '';
+            if (imageUrl.startsWith('http://')) {
+                imageUrl = imageUrl.replace('http://', 'https://');
+            }
+
+            return {
+                meta: {
+                    id: `cdn_${index}`,
+                    type: 'tv',
+                    name: channel.name,
+                    poster: imageUrl,
+                    posterShape: 'landscape',
+                    background: imageUrl,
+                    logo: imageUrl,
+                    description: `País: ${channel.code ? channel.code.toUpperCase() : 'N/A'} | Status: ${channel.status ? channel.status.toUpperCase() : 'ONLINE'} | Espectadores: ${channel.viewers || 0}`
+                }
+            };
+        }
+    }
+    return { meta: null };
+});
+
+// Handler de Stream (Link de reprodução externo)
 builder.defineStreamHandler(async ({ id }) => {
     if (id.startsWith('cdn_')) {
         const index = parseInt(id.replace('cdn_', ''), 10);
@@ -90,7 +119,10 @@ builder.defineStreamHandler(async ({ id }) => {
                 streams: [
                     {
                         title: `▶ Assistir ${channel.name} (${channel.code ? channel.code.toUpperCase() : 'LIVE'})`,
-                        externalUrl: channel.url
+                        externalUrl: channel.url,
+                        behaviorHints: {
+                            notWebReady: true
+                        }
                     }
                 ]
             };
@@ -103,7 +135,7 @@ const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
 module.exports = (req, res) => {
-    // Página inicial para instalação
+    // Página inicial amigável
     if (req.url === '/' || req.url === '') {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const protocol = req.headers['x-forwarded-proto'] || 'https';
@@ -132,7 +164,7 @@ module.exports = (req, res) => {
             <body>
                 <div class="card">
                     <h1>📺 CDN Live TV Addon</h1>
-                    <p>Addon atualizado com suporte a logotipos retangulares e reprodução externa.</p>
+                    <p>Addon atualizado com suporte completo a metadados e streams externos.</p>
                     <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
                     <div style="margin-top: 15px;">
                         <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
