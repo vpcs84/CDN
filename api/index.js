@@ -3,7 +3,7 @@ const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 // Configuração do Manifesto do Addon
 const manifest = {
     id: 'org.cdnlivetv.addon',
-    version: '1.0.6',
+    version: '1.0.7',
     name: 'CDN Live TV',
     description: 'Assista a centenas de canais de TV ao vivo diretamente no Stremio.',
     resources: ['catalog', 'meta', 'stream'],
@@ -49,14 +49,14 @@ async function fetchChannels() {
     }
 }
 
-// Proxy externo confiável para liberar os logotipos no Stremio
-function getProxyImageUrl(url) {
-    if (!url) return '';
-    let fixedUrl = url;
+// Cria uma URL relativa para o proxy interno do próprio addon
+function getLocalProxyUrl(originalUrl) {
+    if (!originalUrl) return '';
+    let fixedUrl = originalUrl;
     if (fixedUrl.startsWith('http://')) {
         fixedUrl = fixedUrl.replace('http://', 'https://');
     }
-    return `https://images.weserv.nl/?url=${encodeURIComponent(fixedUrl)}`;
+    return `/imgproxy?url=${encodeURIComponent(fixedUrl)}`;
 }
 
 // Handler do Catálogo
@@ -65,7 +65,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
         const channels = await fetchChannels();
         
         const metas = channels.map((channel, index) => {
-            const imgUrl = getProxyImageUrl(channel.image);
+            const imgUrl = getLocalProxyUrl(channel.image);
 
             return {
                 id: `cdn_${index}`,
@@ -73,7 +73,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
                 name: channel.name,
                 poster: imgUrl,
                 logo: imgUrl,
-                posterShape: 'square', // Formato ideal para logos de TV
+                posterShape: 'square',
                 description: `País: ${channel.code ? channel.code.toUpperCase() : 'N/A'} | Status: ${channel.status ? channel.status.toUpperCase() : 'ONLINE'} | Espectadores: ${channel.viewers || 0}`
             };
         });
@@ -91,7 +91,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
         const channel = channels[index];
 
         if (channel) {
-            const imgUrl = getProxyImageUrl(channel.image);
+            const imgUrl = getLocalProxyUrl(channel.image);
 
             return {
                 meta: {
@@ -137,7 +137,42 @@ builder.defineStreamHandler(async ({ id }) => {
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
-module.exports = (req, res) => {
+module.exports = async (req, res) => {
+    // Intercepta requisições direcionadas ao proxy local de imagens
+    if (req.url && req.url.startsWith('/imgproxy')) {
+        try {
+            const urlParts = req.url.split('?');
+            if (urlParts.length > 1) {
+                const urlParams = new URLSearchParams(urlParts[1]);
+                const targetUrl = urlParams.get('url');
+                if (targetUrl) {
+                    const imgRes = await fetch(targetUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    });
+                    if (imgRes.ok) {
+                        const buffer = await imgRes.arrayBuffer();
+                        res.writeHead(200, {
+                            'Content-Type': imgRes.headers.get('content-type') || 'image/png',
+                            'Access-Control-Allow-Origin': '*',
+                            'Cache-Control': 'public, max-age=86400'
+                        });
+                        res.end(Buffer.from(buffer));
+                        return;
+                    }
+                }
+            }
+            res.statusCode = 404;
+            res.end('Image not found');
+            return;
+        } catch (err) {
+            res.statusCode = 500;
+            res.end('Image proxy error');
+            return;
+        }
+    }
+
     // Página inicial amigável
     if (req.url === '/' || req.url === '') {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
@@ -148,7 +183,7 @@ module.exports = (req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(`
             <!DOCTYPE html>
-            <html lang="pt-BR">
+            <html lang="pt-PT">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -167,7 +202,7 @@ module.exports = (req, res) => {
             <body>
                 <div class="card">
                     <h1>📺 CDN Live TV Addon</h1>
-                    <p>Addon atualizado com proxy de imagens otimizado!</p>
+                    <p>Addon atualizado com proxy local de imagens!</p>
                     <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
                     <div style="margin-top: 15px;">
                         <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
