@@ -3,7 +3,7 @@ const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 // Configuração do Manifesto do Addon
 const manifest = {
     id: 'org.cdnlivetv.addon',
-    version: '1.0.9',
+    version: '1.1.0',
     name: 'CDN Live TV',
     description: 'Assista a centenas de canais de TV ao vivo diretamente no Stremio.',
     resources: ['catalog', 'meta', 'stream'],
@@ -58,19 +58,10 @@ async function fetchChannels() {
     return channelsCache.data;
 }
 
-// Variáveis para contexto dinâmico de host
-let currentHost = '';
-let currentProtocol = 'https';
-
-// Gera uma URL absoluta apontando para o proxy interno do próprio addon
-function getAbsoluteProxyUrl(originalUrl) {
-    if (!originalUrl) return '';
-    let fixedUrl = originalUrl;
-    if (fixedUrl.startsWith('http://')) {
-        fixedUrl = fixedUrl.replace('http://', 'https://');
-    }
-    if (!currentHost) return fixedUrl;
-    return `${currentProtocol}://${currentHost}/imgproxy?url=${encodeURIComponent(fixedUrl)}`;
+// Gera um logotipo profissional e dinâmico com o nome exato do canal
+function getDynamicLogo(channelName) {
+    const name = channelName || 'TV';
+    return `https://placehold.co/300x300/181b22/ffffff/png?text=${encodeURIComponent(name)}`;
 }
 
 // Handler do Catálogo
@@ -79,14 +70,14 @@ builder.defineCatalogHandler(async ({ type, id }) => {
         const channels = await fetchChannels();
         
         const metas = channels.map((channel, index) => {
-            const imgUrl = getAbsoluteProxyUrl(channel.image);
+            const logoUrl = getDynamicLogo(channel.name);
 
             return {
                 id: `cdn_${index}`,
                 type: 'tv',
                 name: channel.name || 'Canal',
-                poster: imgUrl,
-                logo: imgUrl,
+                poster: logoUrl,
+                logo: logoUrl,
                 posterShape: 'square',
                 description: `País: ${channel.code ? channel.code.toUpperCase() : 'N/A'} | Status: ${channel.status ? channel.status.toUpperCase() : 'ONLINE'} | Espectadores: ${channel.viewers || 0}`
             };
@@ -105,17 +96,17 @@ builder.defineMetaHandler(async ({ type, id }) => {
         const channel = channels[index];
 
         if (channel) {
-            const imgUrl = getAbsoluteProxyUrl(channel.image);
+            const logoUrl = getDynamicLogo(channel.name);
 
             return {
                 meta: {
                     id: `cdn_${index}`,
                     type: 'tv',
                     name: channel.name || 'Canal',
-                    poster: imgUrl,
-                    logo: imgUrl,
+                    poster: logoUrl,
+                    logo: logoUrl,
                     posterShape: 'square',
-                    background: imgUrl,
+                    background: logoUrl,
                     description: `País: ${channel.code ? channel.code.toUpperCase() : 'N/A'} | Status: ${channel.status ? channel.status.toUpperCase() : 'ONLINE'} | Espectadores: ${channel.viewers || 0}`
                 }
             };
@@ -151,50 +142,11 @@ builder.defineStreamHandler(async ({ id }) => {
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
-module.exports = async (req, res) => {
-    currentHost = req.headers['x-forwarded-host'] || req.headers.host;
-    currentProtocol = req.headers['x-forwarded-proto'] || 'https';
-
-    // Intercepta e serve imagens de forma segura pelo proxy local
-    if (req.url && req.url.startsWith('/imgproxy')) {
-        try {
-            const urlParts = req.url.split('?');
-            if (urlParts.length > 1) {
-                const urlParams = new URLSearchParams(urlParts[1]);
-                const targetUrl = urlParams.get('url');
-                if (targetUrl) {
-                    const imgRes = await fetch(targetUrl, {
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                            'Referer': 'https://api.cdnlivetv.tv/'
-                        }
-                    });
-                    if (imgRes.ok) {
-                        const buffer = await imgRes.arrayBuffer();
-                        res.writeHead(200, {
-                            'Content-Type': imgRes.headers.get('content-type') || 'image/png',
-                            'Access-Control-Allow-Origin': '*',
-                            'Cache-Control': 'public, max-age=86400'
-                        });
-                        res.end(Buffer.from(buffer));
-                        return;
-                    }
-                }
-            }
-            res.statusCode = 404;
-            res.end('Image not found');
-            return;
-        } catch (err) {
-            res.statusCode = 500;
-            res.end('Proxy error');
-            return;
-        }
-    }
-
+module.exports = (req, res) => {
     // Página inicial amigável
     if (req.url === '/' || req.url === '') {
-        const host = currentHost;
-        const protocol = currentProtocol;
+        const host = req.headers['x-forwarded-host'] || req.headers.host;
+        const protocol = req.headers['x-forwarded-proto'] || 'https';
         const manifestUrl = `${protocol}://${host}/manifest.json`;
         const stremioUrl = `stremio://${host}/manifest.json`;
 
@@ -220,7 +172,7 @@ module.exports = async (req, res) => {
             <body>
                 <div class="card">
                     <h1>📺 CDN Live TV Addon</h1>
-                    <p>Addon atualizado com proxy local absoluto de imagens!</p>
+                    <p>Addon atualizado com logotipos dinâmicos garantidos!</p>
                     <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
                     <div style="margin-top: 15px;">
                         <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
