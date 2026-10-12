@@ -3,7 +3,7 @@ const { addonBuilder, getRouter } = require('stremio-addon-sdk');
 // Configuração do Manifesto do Addon
 const manifest = {
     id: 'org.cdnlivetv.addon',
-    version: '1.0.7',
+    version: '1.0.8',
     name: 'CDN Live TV',
     description: 'Assista a centenas de canais de TV ao vivo diretamente no Stremio.',
     resources: ['catalog', 'meta', 'stream'],
@@ -20,12 +20,12 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Cache em memória (60 segundos)
+// Cache em memória (5 minutos para proteger contra lentidão da API)
 let channelsCache = {
     data: [],
     lastFetched: 0
 };
-const CACHE_TTL = 60 * 1000;
+const CACHE_TTL = 5 * 60 * 1000;
 
 async function fetchChannels() {
     const now = Date.now();
@@ -34,29 +34,41 @@ async function fetchChannels() {
     }
 
     try {
+        // Timeout de segurança de 6 segundos para evitar falhas na Vercel
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+
         const response = await fetch('https://api.cdnlivetv.tv/api/v1/channels/?user=cdnlivetv&plan=free', {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            },
+            signal: controller.signal
         });
-        const json = await response.json();
-        channelsCache.data = json.channels || [];
-        channelsCache.lastFetched = now;
-        return channelsCache.data;
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+            const json = await response.json();
+            if (json && Array.isArray(json.channels)) {
+                channelsCache.data = json.channels;
+                channelsCache.lastFetched = now;
+            }
+        }
     } catch (error) {
-        console.error('Erro ao buscar canais da API:', error);
-        return channelsCache.data;
+        console.error('Erro ao buscar canais da API (utilizando cache anterior):', error.message);
     }
+    
+    return channelsCache.data;
 }
 
-// Cria uma URL relativa para o proxy interno do próprio addon
-function getLocalProxyUrl(originalUrl) {
-    if (!originalUrl) return '';
-    let fixedUrl = originalUrl;
+// Otimizador e proxy externo seguro para logotipos de TV
+function getSafeImageUrl(url) {
+    if (!url) return '';
+    let fixedUrl = url;
     if (fixedUrl.startsWith('http://')) {
         fixedUrl = fixedUrl.replace('http://', 'https://');
     }
-    return `/imgproxy?url=${encodeURIComponent(fixedUrl)}`;
+    // Utiliza o serviço weserv para entregar a imagem com CORS liberado e sem travar a Vercel
+    return `https://images.weserv.nl/?url=${encodeURIComponent(fixedUrl)}&w=300&h=300&fit=contain`;
 }
 
 // Handler do Catálogo
@@ -65,12 +77,12 @@ builder.defineCatalogHandler(async ({ type, id }) => {
         const channels = await fetchChannels();
         
         const metas = channels.map((channel, index) => {
-            const imgUrl = getLocalProxyUrl(channel.image);
+            const imgUrl = getSafeImageUrl(channel.image);
 
             return {
                 id: `cdn_${index}`,
                 type: 'tv',
-                name: channel.name,
+                name: channel.name || 'Canal',
                 poster: imgUrl,
                 logo: imgUrl,
                 posterShape: 'square',
@@ -91,13 +103,13 @@ builder.defineMetaHandler(async ({ type, id }) => {
         const channel = channels[index];
 
         if (channel) {
-            const imgUrl = getLocalProxyUrl(channel.image);
+            const imgUrl = getSafeImageUrl(channel.image);
 
             return {
                 meta: {
                     id: `cdn_${index}`,
                     type: 'tv',
-                    name: channel.name,
+                    name: channel.name || 'Canal',
                     poster: imgUrl,
                     logo: imgUrl,
                     posterShape: 'square',
@@ -137,43 +149,8 @@ builder.defineStreamHandler(async ({ id }) => {
 const addonInterface = builder.getInterface();
 const router = getRouter(addonInterface);
 
-module.exports = async (req, res) => {
-    // Intercepta requisições direcionadas ao proxy local de imagens
-    if (req.url && req.url.startsWith('/imgproxy')) {
-        try {
-            const urlParts = req.url.split('?');
-            if (urlParts.length > 1) {
-                const urlParams = new URLSearchParams(urlParts[1]);
-                const targetUrl = urlParams.get('url');
-                if (targetUrl) {
-                    const imgRes = await fetch(targetUrl, {
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        }
-                    });
-                    if (imgRes.ok) {
-                        const buffer = await imgRes.arrayBuffer();
-                        res.writeHead(200, {
-                            'Content-Type': imgRes.headers.get('content-type') || 'image/png',
-                            'Access-Control-Allow-Origin': '*',
-                            'Cache-Control': 'public, max-age=86400'
-                        });
-                        res.end(Buffer.from(buffer));
-                        return;
-                    }
-                }
-            }
-            res.statusCode = 404;
-            res.end('Image not found');
-            return;
-        } catch (err) {
-            res.statusCode = 500;
-            res.end('Image proxy error');
-            return;
-        }
-    }
-
-    // Página inicial amigável
+module.exports = (req, res) => {
+    // Página inicial informativa
     if (req.url === '/' || req.url === '') {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         const protocol = req.headers['x-forwarded-proto'] || 'https';
@@ -202,7 +179,7 @@ module.exports = async (req, res) => {
             <body>
                 <div class="card">
                     <h1>📺 CDN Live TV Addon</h1>
-                    <p>Addon atualizado com proxy local de imagens!</p>
+                    <p>Addon a funcionar com estabilidade máxima na Vercel!</p>
                     <a href="${stremioUrl}" class="btn">Instalar no Stremio</a>
                     <div style="margin-top: 15px;">
                         <span style="font-size: 12px; color: #a4b0be;">Manifesto:</span><br>
